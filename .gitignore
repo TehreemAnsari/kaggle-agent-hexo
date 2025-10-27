@@ -1,0 +1,49 @@
+# Ignore all hidden files and folders
+.*
+!.gitignore
+
+# Project-specific
+/data/
+/local_run/
+
+# Python cache and environment
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.log
+*.sqlite3
+*.db
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# IDE / Editor settings
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Jupyter notebooks
+.ipynb_checkpoints/
+
+# Build / distribution folders
+build/
+dist/
+*.egg-info/
+
+# AWS / credentials / keys
+*.pem
+*.key
+*.env
+.env
+
+# Temporary or generated files
+tmp/
+temp/
+*.bak
+*.swp

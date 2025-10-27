@@ -1,0 +1,52 @@
+{
+    "Comment": "Kaggle Agent Workflow",
+    "StartAt": "Plan",
+    "States": {
+      "Plan": {
+        "Type": "Task",
+        "Resource": "arn:aws:lambda:REGION:ACCOUNT:function:Plan",
+        "Next": "RunTraining"
+      },
+      "RunTraining": {
+        "Type": "Task",
+        "Resource": "arn:aws:states:::ecs:runTask.sync",
+        "Parameters": {
+          "LaunchType": "FARGATE",
+          "Cluster": "arn:aws:ecs:REGION:ACCOUNT:cluster/kagent-cluster",
+          "TaskDefinition": "kaggle-runner:1",
+          "NetworkConfiguration": {
+            "AwsvpcConfiguration": {
+              "Subnets": ["subnet-xxxx"],
+              "AssignPublicIp": "ENABLED"
+            }
+          },
+          "Overrides": {
+            "ContainerOverrides": [{
+              "Name": "runner",
+              "Environment": [
+                {"Name":"RUN_ID","Value.$":"$.run_id"},
+                {"Name":"URL","Value.$":"$.url"},
+                {"Name":"EMAIL","Value.$":"$.email"},
+                {"Name":"S3_BUCKET","Value":"kagent-artifacts"},
+                {"Name":"DDB_TABLE","Value":"Runs"},
+                {"Name":"KAGGLE_USERNAME","Value":"{{ssm:/kaggle/username}}"},
+                {"Name":"KAGGLE_KEY","Value":"{{ssm:/kaggle/key}}"}
+              ]
+            }]
+          }
+        },
+        "Next": "ValidateOutput"
+      },
+      "ValidateOutput": {
+        "Type": "Task",
+        "Resource": "arn:aws:lambda:REGION:ACCOUNT:function:ValidateOutput",
+        "Next": "MarkSucceeded"
+      },
+      "MarkSucceeded": {
+        "Type": "Task",
+        "Resource": "arn:aws:lambda:REGION:ACCOUNT:function:MarkSucceeded",
+        "End": true
+      }
+    }
+  }
+  
