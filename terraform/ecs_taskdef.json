@@ -1,0 +1,16 @@
+{
+    "family": "kaggle-agent-runner",
+    "networkMode": "awsvpc",
+    "requiresCompatibilities": ["FARGATE"],
+    "cpu": "1024",
+    "memory": "2048",
+    "containerDefinitions": [
+      {
+        "name": "runner",
+        "image": "ACCOUNT.dkr.ecr.REGION.amazonaws.com/kaggle-runner:1",
+        "essential": true,
+        "command": ["python", "/app/runner_main.py"]
+      }
+    ]
+  }
+  
