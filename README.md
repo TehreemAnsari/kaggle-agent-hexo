@@ -2,36 +2,6 @@
 
 ---
 
-## Table of Contents
-
-1. [High‑Level Architecture](#high-level-architecture)
-2. [Design Goals & Non‑Goals](#design-goals--non-goals)
-3. [Key Trade‑offs & Reasoning](#key-trade-offs--reasoning)
-   - [Serverless vs. Always‑On Compute](#serverless-vs-always-on-compute)
-   - [ECS Fargate vs. Batch vs. SageMaker](#ecs-fargate-vs-batch-vs-sagemaker)
-   - [OpenAI Codegen vs. Canned Templates](#openai-codegen-vs-canned-templates)
-   - [Terraform State & Drift Control](#terraform-state--drift-control)
-4. [End‑to‑End Flow](#end-to-end-flow)
-5. [Concurrency Model & Throttling](#concurrency-model--throttling)
-6. [Load Testing Plan](#load-testing-plan)
-7. [Implementation Walkthrough](#implementation-walkthrough)
-   - [API Gateway & Lambda: **StartRun**](#api-gateway--lambda-startrun)
-   - [Lambda: **Plan**](#lambda-plan)
-   - [ECS Fargate Task: **Runner**](#ecs-fargate-task-runner)
-   - [Lambda: **ValidateOutput**](#lambda-validateoutput)
-   - [Lambda: **MarkSucceeded** (SES Email)](#lambda-marksucceeded-ses-email)
-   - [State Machine](#state-machine)
-   - [Data Stores: DynamoDB & S3](#data-stores-dynamodb--s3)
-   - [Images, ECR & Docker Tags](#images-ecr--docker-tags)
-8. [Security & Compliance](#security--compliance)
-9. [Observability & Runbook](#observability--runbook)
-10. [Deployment](#deployment)
-11. [Testing & Troubleshooting](#testing--troubleshooting)
-12. [Cost Notes](#cost-notes)
-13. [Future Improvements](#future-improvements)
-
----
-
 ## High‑Level Architecture
 <img width="1078" height="669" alt="kaggle_agent_solver drawio" src="https://github.com/user-attachments/assets/1cf224b3-0904-4d00-8f18-fa56c7fa0a1f" />
 
