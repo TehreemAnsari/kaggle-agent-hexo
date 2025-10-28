@@ -19,3 +19,13 @@ output "dynamodb_table" {
 output "ecr_repository_url" {
   value = aws_ecr_repository.runner.repository_url
 }
+
+output "ecs_task_definition_arn" {
+  description = "ECS task definition ARN"
+  value       = aws_ecs_task_definition.runner.arn
+}
+
+output "ecs_latest_revision" {
+  description = "Current ECS task definition revision"
+  value       = aws_ecs_task_definition.runner.revision
+}

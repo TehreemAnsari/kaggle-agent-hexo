@@ -146,7 +146,8 @@ data "aws_iam_policy_document" "ecs_task_role_permissions" {
     actions = ["ssm:GetParameter", "ssm:GetParameters", "ssm:GetParameterHistory"]
     resources = [
       aws_ssm_parameter.kaggle_username.arn,
-      aws_ssm_parameter.kaggle_key.arn
+      aws_ssm_parameter.kaggle_key.arn,
+      data.aws_ssm_parameter.openai_api_key.arn
     ]
   }
 
@@ -173,7 +174,8 @@ resource "aws_iam_role_policy" "ecs_exec_ssm" {
         ]
         Resource = [
           aws_ssm_parameter.kaggle_username.arn,
-          aws_ssm_parameter.kaggle_key.arn
+          aws_ssm_parameter.kaggle_key.arn,
+          data.aws_ssm_parameter.openai_api_key.arn
         ]
       }
     ]

@@ -18,25 +18,59 @@ def write(path, txt): path.parent.mkdir(parents=True,exist_ok=True); path.write_
 def main():
     if os.getenv("KAGGLE_USERNAME") and os.getenv("KAGGLE_KEY"):
         os.makedirs("/root/.kaggle", exist_ok=True)
-        json.dump({"username":os.environ["KAGGLE_USERNAME"],"key":os.environ["KAGGLE_KEY"]},
-                  open("/root/.kaggle/kaggle.json","w")); os.chmod("/root/.kaggle/kaggle.json",0o600)
+        json.dump({"username": os.environ["KAGGLE_USERNAME"], "key": os.environ["KAGGLE_KEY"]},
+                  open("/root/.kaggle/kaggle.json", "w"))
+        os.chmod("/root/.kaggle/kaggle.json", 0o600)
 
-    p=plan(URL,str(RUN_DIR)); write(RUN_DIR/"plan.json",json.dumps(p,indent=2))
-    ddb.update_item(Key={"run_id":RUN_ID},
-        UpdateExpression="SET #s=:s",ExpressionAttributeNames={"#s":"status"},
-        ExpressionAttributeValues={":s":"TRAINING"})
+    # 1️ PLAN STAGE
+    p = plan(URL, str(RUN_DIR))
+    plan_path = RUN_DIR / "plan.json"
+    write(plan_path, json.dumps(p, indent=2))
+    upload(f"runs/{RUN_ID}/plan.json", plan_path)
 
-    code=generate_training_script(p); code_path=RUN_DIR/"train_code.py"; write(code_path,code)
-    proc=subprocess.run([sys.executable,str(code_path)],cwd=str(RUN_DIR),capture_output=True,text=True)
-    write(RUN_DIR/"logs.txt",proc.stdout+"\n=== STDERR ===\n"+proc.stderr)
-    upload(f"runs/{RUN_ID}/logs.txt",RUN_DIR/"logs.txt")
-    if proc.returncode!=0:
-        ddb.update_item(Key={"run_id":RUN_ID},
-          UpdateExpression="SET #s=:s, error=:e",
-          ExpressionAttributeNames={"#s":"status"},
-          ExpressionAttributeValues={":s":"FAILED",":e":"training failed"})
+    ddb.update_item(
+        Key={"run_id": RUN_ID},
+        UpdateExpression="SET #s=:s",
+        ExpressionAttributeNames={"#s": "status"},
+        ExpressionAttributeValues={":s": "TRAINING"}
+    )
+
+    # 2️ CODEGEN STAGE
+    code = generate_training_script(p)
+    code_path = RUN_DIR / "train_code.py"
+    write(code_path, code)
+    upload(f"runs/{RUN_ID}/train_code.py", code_path)   # ← New line
+
+    # 3️ EXECUTION STAGE
+    proc = subprocess.run(
+        [sys.executable, str(code_path)],
+        cwd=str(RUN_DIR),
+        capture_output=True,
+        text=True
+    )
+
+    print("=== TRAINING STDOUT ===")
+    print(proc.stdout)
+    print("=== TRAINING STDERR ===")
+    print(proc.stderr)
+    print("=======================")
+    write(RUN_DIR / "logs.txt", proc.stdout + "\n=== STDERR ===\n" + proc.stderr)
+    upload(f"runs/{RUN_ID}/logs.txt", RUN_DIR / "logs.txt")
+
+    if proc.returncode != 0:
+        ddb.update_item(
+            Key={"run_id": RUN_ID},
+            UpdateExpression="SET #s=:s, #err=:e",
+            ExpressionAttributeNames={"#s": "status", "#err": "error"},
+            ExpressionAttributeValues={":s": "FAILED", ":e": "training failed"}
+        )
+        print("💥 Training script failed, see logs.txt", flush=True)
         sys.exit(1)
-    sub=RUN_DIR/"submission.csv"
-    upload(f"runs/{RUN_ID}/submission.csv",sub)
+
+
+    # 4️ SUBMISSION STAGE
+    sub = RUN_DIR / "submission.csv"
+    upload(f"runs/{RUN_ID}/submission.csv", sub)
+
 
 if __name__=="__main__": main()
