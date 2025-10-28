@@ -72,6 +72,11 @@ resource "aws_ssm_parameter" "kaggle_key" {
   value       = var.kaggle_key
 }
 
+# ---------- SSM parameter for OpenAI ----------
+data "aws_ssm_parameter" "openai_api_key" {
+  name = "/openai/api_key"
+}
+
 # ---------- CloudWatch log groups ----------
 resource "aws_cloudwatch_log_group" "lambdas" {
   name              = "/aws/lambda/${local.name}"
@@ -207,20 +212,38 @@ resource "aws_ecs_task_definition" "runner" {
   execution_role_arn       = aws_iam_role.ecs_task_execution_role.arn
   task_role_arn            = aws_iam_role.ecs_task_role.arn
 
+  # Explicit runtime platform to match Fargate default
+  runtime_platform {
+    operating_system_family = "LINUX"
+    cpu_architecture        = "X86_64"
+  }
+
+  # Create before destroy ensures Terraform re-registers safely
+  lifecycle {
+    create_before_destroy = true
+  }
+
+  # Always keep the latest revision automatically
+  track_latest = true
+
   container_definitions = jsonencode([
     {
       name      = "runner"
       image     = local.runner_image_url
       essential = true
       command   = ["python", "/app/runner_main.py"]
+
       environment = [
         { name = "S3_BUCKET", value = aws_s3_bucket.artifacts.bucket },
         { name = "DDB_TABLE", value = aws_dynamodb_table.runs.name }
       ]
+
       secrets = [
         { name = "KAGGLE_USERNAME", valueFrom = aws_ssm_parameter.kaggle_username.arn },
-        { name = "KAGGLE_KEY", valueFrom = aws_ssm_parameter.kaggle_key.arn }
+        { name = "KAGGLE_KEY",      valueFrom = aws_ssm_parameter.kaggle_key.arn },
+        { name = "OPENAI_API_KEY",  valueFrom = data.aws_ssm_parameter.openai_api_key.arn }
       ]
+
       logConfiguration = {
         logDriver = "awslogs"
         options = {
@@ -232,6 +255,7 @@ resource "aws_ecs_task_definition" "runner" {
     }
   ])
 }
+
 
 # ---------- Lambda Packaging (archive_file) ----------
 data "archive_file" "start_zip" {

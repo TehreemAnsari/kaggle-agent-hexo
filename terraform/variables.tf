@@ -30,7 +30,7 @@ variable "ecr_repo_name" {
 variable "runner_image_tag" {
   description = "Tag for runner image in ECR"
   type        = string
-  default     = "1"
+  default     = "10"
 }
 
 variable "kaggle_username" {
