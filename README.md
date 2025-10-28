@@ -2,56 +2,11 @@
 
 ---
 
-## Table of Contents
-
-1. [High‑Level Architecture](#high-level-architecture)
-2. [Design Goals & Non‑Goals](#design-goals--non-goals)
-3. [Key Trade‑offs & Reasoning](#key-trade-offs--reasoning)
-   - [Serverless vs. Always‑On Compute](#serverless-vs-always-on-compute)
-   - [ECS Fargate vs. Batch vs. SageMaker](#ecs-fargate-vs-batch-vs-sagemaker)
-   - [OpenAI Codegen vs. Canned Templates](#openai-codegen-vs-canned-templates)
-   - [Terraform State & Drift Control](#terraform-state--drift-control)
-4. [End‑to‑End Flow](#end-to-end-flow)
-5. [Concurrency Model & Throttling](#concurrency-model--throttling)
-6. [Load Testing Plan](#load-testing-plan)
-7. [Implementation Walkthrough](#implementation-walkthrough)
-   - [API Gateway & Lambda: **StartRun**](#api-gateway--lambda-startrun)
-   - [Lambda: **Plan**](#lambda-plan)
-   - [ECS Fargate Task: **Runner**](#ecs-fargate-task-runner)
-   - [Lambda: **ValidateOutput**](#lambda-validateoutput)
-   - [Lambda: **MarkSucceeded** (SES Email)](#lambda-marksucceeded-ses-email)
-   - [State Machine](#state-machine)
-   - [Data Stores: DynamoDB & S3](#data-stores-dynamodb--s3)
-   - [Images, ECR & Docker Tags](#images-ecr--docker-tags)
-8. [Security & Compliance](#security--compliance)
-9. [Observability & Runbook](#observability--runbook)
-10. [Deployment](#deployment)
-11. [Testing & Troubleshooting](#testing--troubleshooting)
-12. [Cost Notes](#cost-notes)
-13. [Future Improvements](#future-improvements)
-
----
-
 ## High‑Level Architecture
+<img width="1078" height="669" alt="kaggle_agent_solver drawio" src="https://github.com/user-attachments/assets/1cf224b3-0904-4d00-8f18-fa56c7fa0a1f" />
 
-```mermaid
-flowchart TD
-    A[curl/Client] --> B[API Gateway (HTTP API)]
-    B --> C[Lambda StartRun]
-    C -->|StartExecution| D[Step Functions]
-    D --> E[Lambda Plan]
-    E --> F[ECS Fargate Task: Runner]
-    F --> G[Lambda ValidateOutput]
-    G --> H[Lambda MarkSucceeded (SES)]
-    subgraph Stores
-      S3[(S3 artifacts)]
-      DDB[(DynamoDB Runs table)]
-    end
-    F -->|writes| S3
-    E -->|PutItem/Status| DDB
-    G -->|Status| DDB
-    H -->|Final status| DDB
-```
+
+
 
 ### Entities
 - **API Gateway (HTTP)**: Single endpoint `POST /run?url=...&email=...`.
@@ -69,15 +24,10 @@ flowchart TD
 
 **Goals**
 - One‑click (curl) runs per Kaggle URL.
-- No servers to manage; scale to bursts.
-- Robust against flaky codegen (sanitize output, fixed scaffolding, safe defaults).
-- Fully reproducible infra via Terraform.
-- Minimal permissions, least‑privilege IAM.
-
-**Non‑Goals**
-- Highest leaderboard scores; correctness and stability take priority.
-- GPU support (can be added later via Fargate/EC2 or Batch + GPU).
-- Web UI beyond basic API invocation.
+- Scalable
+- Concurrent and isolation
+- Extensible
+- Security (these are defaults from IAM and API Gateway)
 
 ---
 
@@ -116,69 +66,12 @@ flowchart TD
 - **Step Functions**: Each run has its own execution; defaults suffice.
 - **ECS Fargate**: Primary cost/compute bottleneck. Control with:
   - **DDB‑backed admission control** (optional): if >N running, return `429 Try later`.
-  - **SFN Map state** (future): batch multiple runs with concurrency N.
 - **OpenAI/Kaggle Rate Limits**: Retries with exponential backoff; jitter; capped attempts.
 - **Idempotency**: `run_id` is the partition key; starting the same `run_id` again is a no‑op.
 
-**Backpressure levers**
-- API Gateway throttling
-- Lambda reserved concurrency
-- SQS (optional) in front of Step Functions
-- SFN concurrency tokens (service integrations)
-
 ---
 
-## Load Testing Plan
-
-### Goals
-- Verify steady‑state throughput of **N parallel ECS tasks** (e.g., 10, 25, 50).
-- Ensure no timeouts at API/StartRun and SFN service quotas are respected.
-- Confirm graceful degradation when Kaggle rate‑limits or OpenAI errors occur.
-
-### Tooling
-- **k6** for HTTP load on `POST /run`.
-- **Custom “fan‑out” runner** using `xargs -P` to fire bursts from a test box.
-- Optional **Locust** for richer scenarios.
-
-### Suggested k6 Script
-```javascript
-import http from 'k6/http';
-import { sleep } from 'k6';
-
-export const options = {
-  scenarios: {
-    bursts: {
-      executor: 'ramping-arrival-rate',
-      startRate: 5,
-      timeUnit: '1s',
-      preAllocatedVUs: 50,
-      maxVUs: 200,
-      stages: [
-        { target: 10, duration: '1m' },
-        { target: 25, duration: '2m' },
-        { target: 50, duration: '3m' },
-      ],
-    },
-  },
-};
-
-export default function () {
-  const url = 'https://<api-id>.execute-api.<region>.amazonaws.com/prod/run';
-  const params = { url: 'https://www.kaggle.com/competitions/titanic', email: 'tester@example.com' };
-  http.post(`${url}?url=${encodeURIComponent(params.url)}&email=${params.email}`);
-  sleep(1);
-}
-```
-
-### What to Measure
-- API P50/P95 latency; 4xx/5xx rates.
-- SFN executions started vs. ECS tasks running concurrently.
-- ECS task failure rate; average runtime.
-- OpenAI/Kaggle error rates (CloudWatch insights filter).
-
----
-
-## Implementation Walkthrough
+## Implementation Walkthrough (see the video)
 
 ### API Gateway & Lambda **StartRun**
 - **Input**: `url` (Kaggle comp URL), `email`.
@@ -266,33 +159,11 @@ aws ecs describe-tasks --cluster kaggle-agent-cluster --tasks <taskArns> \
 
 ---
 
-## Security & Compliance
-
-- **Secrets in SSM Parameter Store** (`SecureString`): `OPENAI_API_KEY`, `KAGGLE_USERNAME`, `KAGGLE_KEY`.
-- **IAM Least Privilege**: separate execution/task roles; restrict to specific ARNs.
-- **S3**: Block public access; use pre‑signed URLs for sharing.
-- **Git Hygiene**: Never commit TF state to git; use `.gitignore` and remote TF state (S3 + DynamoDB lock).
-- **Kaggle TOS**: Some comps require **explicit rule acceptance**; runner detects 403 and surfaces a clear error.
-
----
-
 ## Observability & Runbook
 
 **CloudWatch Logs Groups**
 - `/aws/lambda/<project>` for all lambdas.
 - `/aws/ecs/<project>` for runner.
-
-**Metrics & Alarms**
-- Lambda errors > 0 for 5m → Slack/email.
-- ECS task failures > 0 for 5m → Slack/email.
-- SFN execution failures → alarm with execution ARN in message.
-
-**Runbook**
-1. Check Step Functions execution history for the failing run.
-2. Inspect ECS task logs under `/aws/ecs/<project>` for `runner` stream.
-3. Verify image tag and task definition match (`describe-task-definition`).
-4. Confirm SSM parameters exist and IAM permissions are intact.
-5. Retry the run; if Kaggle 403, accept rules and rerun.
 
 ---
 
@@ -338,50 +209,5 @@ curl -X POST "$API_BASE/run?url=https://www.kaggle.com/competitions/titanic&emai
 
 ---
 
-## Future Improvements
-
-- **GPU jobs** for deep learning competitions (Batch + GPU or Fargate/EC2).
-- **Model registry** of successful pipelines per competition to skip codegen.
-- **SQS buffer** ahead of Step Functions for larger spikes.
-- **Web UI** with run queue and artifacts explorer.
-- **Better dataset autodetection** (target, id) using small metadata probes only.
-- **Remote Terraform state** and CI plan/apply with drift detection.
-- **Artifact retention policy** (S3 lifecycle rules).
-
----
-
-### Appendix: Minimal ECS Task JSON (Excerpt)
-```json
-{
-  "family": "kaggle-agent-runner",
-  "requiresCompatibilities": ["FARGATE"],
-  "networkMode": "awsvpc",
-  "cpu": "1024",
-  "memory": "2048",
-  "runtimePlatform": {
-    "cpuArchitecture": "X86_64",
-    "operatingSystemFamily": "LINUX"
-  },
-  "containerDefinitions": [
-    {
-      "name": "runner",
-      "image": "958923398556.dkr.ecr.us-west-2.amazonaws.com/kaggle-runner:14",
-      "essential": true,
-      "command": ["python", "/app/runner_main.py"],
-      "logConfiguration": {
-        "logDriver": "awslogs",
-        "options": {
-          "awslogs-group": "/aws/ecs/kaggle-agent",
-          "awslogs-region": "us-west-2",
-          "awslogs-stream-prefix": "runner"
-        }
-      }
-    }
-  ]
-}
-```
-
----
-
-**Author’s Note**  
-This README focuses on production safety and repeatability: stable scaffolding around a small code‑generated core, clear IAM isolation, multi‑arch images, and bulletproof orchestration. Treat accuracy as incremental improvement; stability first.
+## Discarded option
+<img width="792" height="464" alt="discarded_option drawio" src="https://github.com/user-attachments/assets/de9e7c24-07f3-4809-b1e5-41c9e02c7fff" />
