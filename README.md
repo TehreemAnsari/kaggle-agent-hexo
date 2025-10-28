@@ -209,4 +209,5 @@ curl -X POST "$API_BASE/run?url=https://www.kaggle.com/competitions/titanic&emai
 
 ---
 
-able scaffolding around a small code‑generated core, clear IAM isolation, multi‑arch images, and bulletproof orchestration. Treat accuracy as incremental improvement; stability first.
+## Discarded option
+<img width="792" height="464" alt="discarded_option drawio" src="https://github.com/user-attachments/assets/de9e7c24-07f3-4809-b1e5-41c9e02c7fff" />
